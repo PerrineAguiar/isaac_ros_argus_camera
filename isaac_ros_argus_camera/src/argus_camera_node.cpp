@@ -197,7 +197,7 @@ void ArgusCameraNode::ArgusCameraInfoCallback(
       cam_link_pose_optical_ * rig_optical_pose_camera_optical;
     fillTransformMsgFromTransform(transform_stamped, rig_body_pose_camera_optical);
 
-    tf_broadcaster_->sendTransform(transform_stamped);
+    if (publish_tf_) tf_broadcaster_->sendTransform(transform_stamped);
     tf_was_published_.insert(transform_stamped.child_frame_id);
   }
 }
@@ -329,11 +329,11 @@ void ArgusCameraNode::ArgusStereoCameraInfoCallback(
       cam_link_pose_optical_.inverse();
 
     fillTransformMsgFromTransform(camera_transform_stamped, rig_pose_camera);
-    tf_broadcaster_->sendTransform(camera_transform_stamped);
+    if (publish_tf_) tf_broadcaster_->sendTransform(camera_transform_stamped);
     tf_was_published_.insert(camera_transform_stamped.child_frame_id);
 
     fillTransformMsgFromTransform(camera_optical_transform_stamped, cam_link_pose_optical_);
-    tf_broadcaster_->sendTransform(camera_optical_transform_stamped);
+    if (publish_tf_) tf_broadcaster_->sendTransform(camera_optical_transform_stamped);
     tf_was_published_.insert(camera_optical_transform_stamped.child_frame_id);
   }
 
@@ -355,7 +355,7 @@ void ArgusCameraNode::ArgusStereoCameraInfoCallback(
 
       fillTransformMsgFromTransform(imu_transform_stamped, rig_pose_imu);
 
-      tf_broadcaster_->sendTransform(imu_transform_stamped);
+      if (publish_tf_) tf_broadcaster_->sendTransform(imu_transform_stamped);
       tf_was_published_.insert(imu_transform_stamped.child_frame_id);
     }
   }

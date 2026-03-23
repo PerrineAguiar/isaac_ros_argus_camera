@@ -93,6 +93,7 @@ protected:
   int framerate_;
   int fsync_type_;
   bool use_hw_timestamp_;
+  bool publish_tf_;
   std::string camera_link_frame_name_;
   // Publisher for tf2.
   std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tf_broadcaster_{nullptr};

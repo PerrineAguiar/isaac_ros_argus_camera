@@ -134,6 +134,7 @@ ArgusStereoNode::ArgusStereoNode(const rclcpp::NodeOptions & options)
   right_camera_info_url_ =
     declare_parameter<std::string>("right_camera_info_url", "");
   wide_fov_ = declare_parameter<bool>("wide_fov", false);
+  publish_tf_ = declare_parameter<bool>("publish_tf", true);
 
   // Load camera info from files if provided
   if (!left_camera_info_url_.empty()) {

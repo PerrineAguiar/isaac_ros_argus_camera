@@ -102,6 +102,7 @@ ArgusMonoNode::ArgusMonoNode(const rclcpp::NodeOptions & options)
   camera_link_frame_name_ = declare_parameter<std::string>("camera_link_frame_name", "camera");
   optical_frame_name_ = declare_parameter<std::string>("optical_frame_name", "camera_optical");
   camera_info_url_ = declare_parameter<std::string>("camera_info_url", "");
+  publish_tf_ = declare_parameter<bool>("publish_tf", true);
 
   // Load camera info from a file if provided
   if (!camera_info_url_.empty()) {
