@@ -162,11 +162,6 @@ private:
   void writerLoop(
     uint32_t writer_id);
 
-  bool writeJpegFile(
-    const std::string & filename,
-    const unsigned char * jpeg_data,
-    size_t jpeg_size);
-
   // ==========================================================================
   // Callback
   // ==========================================================================

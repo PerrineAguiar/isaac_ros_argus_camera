@@ -324,10 +324,6 @@ bool ArgusThreadNode::initializeBuffers(
     return true;
   }
 
-  // --------------------------------------------------------------------------
-  // We allocate enough space for the complete source stride.
-  // --------------------------------------------------------------------------
-
   const size_t allocation_size =
     stride * static_cast<size_t>(height);
 
@@ -506,7 +502,6 @@ void ArgusThreadNode::destroyBuffers()
     0;
 }
 
-
 // ============================================================================
 // Image callback
 // ============================================================================
@@ -654,7 +649,7 @@ void ArgusThreadNode::CustomImageCallback(
   }
 
   // --------------------------------------------------------------------------
-  // Initialize our GPU pool on the first frame.
+  // Initialize GPU pool
   // --------------------------------------------------------------------------
 
   if (!initializeBuffers(
@@ -664,10 +659,6 @@ void ArgusThreadNode::CustomImageCallback(
   {
     return;
   }
-
-  // --------------------------------------------------------------------------
-  // Get an application-owned buffer (using free_mutex_ only)
-  // --------------------------------------------------------------------------
 
   size_t buffer_index = 0;
 
@@ -731,7 +722,7 @@ void ArgusThreadNode::CustomImageCallback(
   }
   
   // --------------------------------------------------------------------------
-  // Copy Argus GPU memory into our GPU memory.
+  // Copy Argus GPU memory into GPU memory.
   // --------------------------------------------------------------------------
 
   const auto copy_start =
@@ -780,10 +771,6 @@ void ArgusThreadNode::CustomImageCallback(
   buffer.frame_name =
     frame_name;
 
-  // --------------------------------------------------------------------------
-  // Queue our application-owned buffer (using write_mutex_ only)
-  // --------------------------------------------------------------------------
-
   {
     std::lock_guard<std::mutex> lock(
       write_mutex_);
@@ -818,10 +805,6 @@ void ArgusThreadNode::CustomImageCallback(
 
   write_cv_.notify_one();
 
-  // --------------------------------------------------------------------------
-  // Optional copy timing.
-  // --------------------------------------------------------------------------
-
   const auto copy_ms =
     std::chrono::duration_cast<std::chrono::microseconds>(
       copy_done - copy_start).count();
@@ -834,112 +817,6 @@ void ArgusThreadNode::CustomImageCallback(
     copy_ms);
 }
 
-
-// ============================================================================
-// Write JPEG file
-// ============================================================================
-
-// bool ArgusThreadNode::writeJpegFile(
-//   const std::string & filename,
-//   const unsigned char * jpeg_data,
-//   size_t jpeg_size)
-// {
-//   FILE * outfile =
-//     fopen(
-//       filename.c_str(),
-//       "wb");
-
-//   if (outfile == nullptr) {
-
-//     RCLCPP_ERROR(
-//       get_logger(),
-//       "Failed to open JPEG file: %s",
-//       filename.c_str());
-
-//     return false;
-//   }
-
-//   const size_t written =
-//     fwrite(
-//       jpeg_data,
-//       1,
-//       jpeg_size,
-//       outfile);
-
-//   fclose(outfile);
-
-//   if (written != jpeg_size) {
-
-//     RCLCPP_ERROR(
-//       get_logger(),
-//       "JPEG write failed: file=%s expected=%zu written=%zu",
-//       filename.c_str(),
-//       jpeg_size,
-//       written);
-
-//     return false;
-//   }
-
-//   return true;
-// }
-
-// ============================================================================
-// Write JPEG file
-// ============================================================================
-
-bool ArgusThreadNode::writeJpegFile(
-  const std::string & filename,
-  const unsigned char * jpeg_data,
-  size_t jpeg_size)
-
-  {
-
-  FILE * outfile =
-    fopen(
-      filename.c_str(),
-      "wb");
-
-  if (outfile == nullptr) {
-
-    RCLCPP_ERROR(
-      get_logger(),
-      "Failed to open JPEG file: %s",
-      filename.c_str());
-
-    return false;
-  }
-
-  const size_t written =
-    fwrite(
-      jpeg_data,
-      1,
-      jpeg_size,
-      outfile);
-
-  fclose(outfile);
-
-  if (written != jpeg_size) {
-
-    RCLCPP_ERROR(
-      get_logger(),
-      "JPEG write failed: file=%s expected=%zu written=%zu",
-      filename.c_str(),
-      jpeg_size,
-      written);
-
-    return false;
-  }
-
-  return true;
-}
-
-// ============================================================================
-// JPEG worker
-// ============================================================================
-
-// ============================================================================
-// Continuous Stream JPEG Writer Loop
-// ============================================================================
 void ArgusThreadNode::writerLoop(uint32_t writer_id)
 {
   RCLCPP_INFO(
@@ -1070,17 +947,11 @@ void ArgusThreadNode::writerLoop(uint32_t writer_id)
     // Synchronize CUDA stream so CPU data vector is fully ready
     cudaStreamSynchronize(cuda_stream);
 
-    // ------------------------------------------------------------------------
-    // 3. IMMEDIATELY return buffer to free_queue_ before disk I/O
-    //    (Prevents "GPU buffer pool exhausted" callback drops)
-    // ------------------------------------------------------------------------
 
     // ------------------------------------------------------------------------
-    // 4. File Rotation Logic
+    // 4. Append Frame Header & JPEG payload to continuous binary file
     // ------------------------------------------------------------------------
-// ------------------------------------------------------------------------
-    // 4. File Rotation Logic (Per-Camera Subfolders)
-    // ------------------------------------------------------------------------
+
     constexpr uint64_t CHUNK_NS = 10000000000ULL; // 100 seconds
     uint64_t chunk_bin = timestamp_ns / CHUNK_NS;
 
@@ -1112,9 +983,7 @@ void ArgusThreadNode::writerLoop(uint32_t writer_id)
       current_chunk_bin = chunk_bin;
     }
 
-    // ------------------------------------------------------------------------
-    // 5. Append Frame Header & JPEG payload to continuous binary file
-    // ------------------------------------------------------------------------
+
     FrameHeader header;
     header.camera_id = camera_id_;
     header.jpeg_size = static_cast<uint32_t>(actual_jpeg_size);
@@ -1149,772 +1018,27 @@ void ArgusThreadNode::writerLoop(uint32_t writer_id)
 }
 
 
-
-// void ArgusThreadNode::writerLoop(
-//   uint32_t writer_id)
-// {
-//   RCLCPP_INFO(
-//     get_logger(),
-//     "nvJPEG worker %u starting for camera_name=%s",
-//     writer_id,
-//     camera_name_.c_str());
-
-//   // --------------------------------------------------------------------------
-//   // Each worker owns its own CUDA stream.
-//   // --------------------------------------------------------------------------
-
-//   cudaStream_t cuda_stream =
-//     nullptr;
-
-//   cudaError_t cuda_result =
-//     cudaStreamCreateWithFlags(
-//       &cuda_stream,
-//       cudaStreamNonBlocking);
-
-//   if (cuda_result != cudaSuccess) {
-
-//     RCLCPP_ERROR(
-//       get_logger(),
-//       "Worker %u: cudaStreamCreate failed: %s",
-//       writer_id,
-//       cudaGetErrorString(cuda_result));
-
-//     return;
-//   }
-
-//   // --------------------------------------------------------------------------
-//   // Each worker owns its own nvJPEG handle.
-//   // --------------------------------------------------------------------------
-
-//   nvjpegHandle_t nvjpeg_handle =
-//     nullptr;
-
-//   nvjpegStatus_t nv_result =
-//     nvjpegCreateSimple(
-//       &nvjpeg_handle);
-
-//   if (nv_result != NVJPEG_STATUS_SUCCESS) {
-
-//     RCLCPP_ERROR(
-//       get_logger(),
-//       "Worker %u: nvjpegCreateSimple failed: %d",
-//       writer_id,
-//       static_cast<int>(nv_result));
-
-//     cudaStreamDestroy(
-//       cuda_stream);
-
-//     return;
-//   }
-
-//   // --------------------------------------------------------------------------
-//   // Encoder state.
-//   // --------------------------------------------------------------------------
-
-//   nvjpegEncoderState_t encoder_state =
-//     nullptr;
-
-//   nv_result =
-//     nvjpegEncoderStateCreate(
-//       nvjpeg_handle,
-//       &encoder_state,
-//       cuda_stream);
-
-//   if (nv_result != NVJPEG_STATUS_SUCCESS) {
-
-//     RCLCPP_ERROR(
-//       get_logger(),
-//       "Worker %u: nvjpegEncoderStateCreate failed: %d",
-//       writer_id,
-//       static_cast<int>(nv_result));
-
-//     nvjpegDestroy(
-//       nvjpeg_handle);
-
-//     cudaStreamDestroy(
-//       cuda_stream);
-
-//     return;
-//   }
-
-//   // --------------------------------------------------------------------------
-//   // Encoder parameters.
-//   // --------------------------------------------------------------------------
-
-//   nvjpegEncoderParams_t encoder_params =
-//     nullptr;
-
-//   nv_result =
-//     nvjpegEncoderParamsCreate(
-//       nvjpeg_handle,
-//       &encoder_params,
-//       cuda_stream);
-
-//   if (nv_result != NVJPEG_STATUS_SUCCESS) {
-
-//     RCLCPP_ERROR(
-//       get_logger(),
-//       "Worker %u: nvjpegEncoderParamsCreate failed: %d",
-//       writer_id,
-//       static_cast<int>(nv_result));
-
-//     nvjpegEncoderStateDestroy(
-//       encoder_state);
-
-//     nvjpegDestroy(
-//       nvjpeg_handle);
-
-//     cudaStreamDestroy(
-//       cuda_stream);
-
-//     return;
-//   }
-
-//   // --------------------------------------------------------------------------
-//   // JPEG quality.
-//   // --------------------------------------------------------------------------
-
-//   nv_result =
-//     nvjpegEncoderParamsSetQuality(
-//       encoder_params,
-//       99,
-//       cuda_stream);
-
-//   if (nv_result != NVJPEG_STATUS_SUCCESS) {
-
-//     RCLCPP_ERROR(
-//       get_logger(),
-//       "Worker %u: nvjpegEncoderParamsSetQuality failed: %d",
-//       writer_id,
-//       static_cast<int>(nv_result));
-
-//     nvjpegEncoderParamsDestroy(
-//       encoder_params);
-
-//     nvjpegEncoderStateDestroy(
-//       encoder_state);
-
-//     nvjpegDestroy(
-//       nvjpeg_handle);
-
-//     cudaStreamDestroy(
-//       cuda_stream);
-
-//     return;
-//   }
-
-//   // --------------------------------------------------------------------------
-//   // JPEG 4:2:0.
-//   // --------------------------------------------------------------------------
-
-//   nv_result =
-//     nvjpegEncoderParamsSetSamplingFactors(
-//       encoder_params,
-//       NVJPEG_CSS_420,
-//       cuda_stream);
-
-//   if (nv_result != NVJPEG_STATUS_SUCCESS) {
-
-//     RCLCPP_ERROR(
-//       get_logger(),
-//       "Worker %u: nvjpegEncoderParamsSetSamplingFactors failed: %d",
-//       writer_id,
-//       static_cast<int>(nv_result));
-
-//     nvjpegEncoderParamsDestroy(
-//       encoder_params);
-
-//     nvjpegEncoderStateDestroy(
-//       encoder_state);
-
-//     nvjpegDestroy(
-//       nvjpeg_handle);
-
-//     cudaStreamDestroy(
-//       cuda_stream);
-
-//     return;
-//   }
-
-//   RCLCPP_INFO(
-//     get_logger(),
-//     "nvJPEG worker %u initialized for camera_name=%s",
-//     writer_id,
-//     camera_name_.c_str());
-
-//   // ==========================================================================
-//   // Worker loop
-//   // ==========================================================================
-
-//   while (true) {
-
-//     size_t buffer_index = 0;
-
-//     // ------------------------------------------------------------------------
-//     // Get buffer index using write_mutex_
-//     // ------------------------------------------------------------------------
-
-//     {
-//       std::unique_lock<std::mutex> lock(
-//         write_mutex_);
-
-//       write_cv_.wait(
-//         lock,
-//         [this]() {
-//           return
-//             !write_queue_.empty() ||
-//             !running_.load();
-//         });
-
-//       if (!running_.load() &&
-//           write_queue_.empty())
-//       {
-//         break;
-//       }
-
-//       buffer_index =
-//         write_queue_.front();
-
-//       write_queue_.pop();
-//     }
-
-//     FrameBuffer & buffer =
-//       buffers_[buffer_index];
-
-//     // ------------------------------------------------------------------------
-//     // Validate buffer.
-//     // ------------------------------------------------------------------------
-
-//     if (buffer.gpu_data == nullptr) {
-
-//       RCLCPP_ERROR(
-//         get_logger(),
-//         "Worker %u: buffer %zu GPU memory is null",
-//         writer_id,
-//         buffer_index);
-
-//       std::lock_guard<std::mutex> lock(
-//         free_mutex_);
-
-//       buffer.in_use =
-//         false;
-
-//       free_queue_.push(
-//         buffer_index);
-
-//       continue;
-//     }
-
-//     const uint32_t width =
-//       buffer.width;
-
-//     const uint32_t height =
-//       buffer.height;
-
-//     const size_t stride =
-//       buffer.stride;
-
-//     const uint64_t timestamp_ns =
-//       buffer.timestamp_ns;
-
-//     // ------------------------------------------------------------------------
-//     // Build nvJPEG image.
-//     // ------------------------------------------------------------------------
-
-//     nvjpegImage_t image{};
-
-//     image.channel[0] =
-//       reinterpret_cast<unsigned char *>(
-//         buffer.gpu_data);
-
-//     image.channel[1] =
-//       nullptr;
-
-//     image.channel[2] =
-//       nullptr;
-
-//     image.channel[3] =
-//       nullptr;
-
-//     image.pitch[0] =
-//       stride;
-
-//     image.pitch[1] =
-//       0;
-
-//     image.pitch[2] =
-//       0;
-
-//     image.pitch[3] =
-//       0;
-
-//     // ------------------------------------------------------------------------
-//     // JPEG encode.
-//     // ------------------------------------------------------------------------
-
-//     const auto encode_start =
-//       std::chrono::steady_clock::now();
-
-//     nv_result =
-//       nvjpegEncodeImage(
-//         nvjpeg_handle,
-//         encoder_state,
-//         encoder_params,
-//         &image,
-//         NVJPEG_INPUT_RGBI,
-//         static_cast<int>(width),
-//         static_cast<int>(height),
-//         cuda_stream);
-
-//     if (nv_result != NVJPEG_STATUS_SUCCESS) {
-
-//       RCLCPP_ERROR(
-//         get_logger(),
-//         "Worker %u: nvjpegEncodeImage failed: %d",
-//         writer_id,
-//         static_cast<int>(nv_result));
-
-//       std::lock_guard<std::mutex> lock(
-//         free_mutex_);
-
-//       buffer.in_use =
-//         false;
-
-//       free_queue_.push(
-//         buffer_index);
-
-//       continue;
-//     }
-
-//     // ------------------------------------------------------------------------
-//     // Query JPEG size.
-//     // ------------------------------------------------------------------------
-
-//     size_t jpeg_size =
-//       0;
-
-//     nv_result =
-//       nvjpegEncodeRetrieveBitstream(
-//         nvjpeg_handle,
-//         encoder_state,
-//         nullptr,
-//         &jpeg_size,
-//         cuda_stream);
-
-//     if (nv_result != NVJPEG_STATUS_SUCCESS ||
-//         jpeg_size == 0)
-//     {
-//       RCLCPP_ERROR(
-//         get_logger(),
-//         "Worker %u: failed to get JPEG size: status=%d size=%zu",
-//         writer_id,
-//         static_cast<int>(nv_result),
-//         jpeg_size);
-
-//       std::lock_guard<std::mutex> lock(
-//         free_mutex_);
-
-//       buffer.in_use =
-//         false;
-
-//       free_queue_.push(
-//         buffer_index);
-
-//       continue;
-//     }
-
-//     // ------------------------------------------------------------------------
-//     // Allocate host JPEG buffer.
-//     // ------------------------------------------------------------------------
-
-//     std::vector<unsigned char> jpeg_data(
-//       jpeg_size);
-
-//     size_t actual_jpeg_size =
-//       jpeg_size;
-
-//     // ------------------------------------------------------------------------
-//     // Retrieve JPEG bitstream.
-//     // ------------------------------------------------------------------------
-
-//     nv_result =
-//       nvjpegEncodeRetrieveBitstream(
-//         nvjpeg_handle,
-//         encoder_state,
-//         jpeg_data.data(),
-//         &actual_jpeg_size,
-//         cuda_stream);
-
-//     if (nv_result != NVJPEG_STATUS_SUCCESS) {
-
-//       RCLCPP_ERROR(
-//         get_logger(),
-//         "Worker %u: nvjpegEncodeRetrieveBitstream failed: %d",
-//         writer_id,
-//         static_cast<int>(nv_result));
-
-//       std::lock_guard<std::mutex> lock(
-//         free_mutex_);
-
-//       buffer.in_use =
-//         false;
-
-//       free_queue_.push(
-//         buffer_index);
-
-//       continue;
-//     }
-
-//     // ------------------------------------------------------------------------
-//     // Wait for JPEG GPU work to finish before CPU accesses jpeg_data.
-//     // ------------------------------------------------------------------------
-
-//     cuda_result =
-//       cudaStreamSynchronize(
-//         cuda_stream);
-
-//     if (cuda_result != cudaSuccess) {
-
-//       RCLCPP_ERROR(
-//         get_logger(),
-//         "Worker %u: cudaStreamSynchronize failed: %s",
-//         writer_id,
-//         cudaGetErrorString(cuda_result));
-
-//       std::lock_guard<std::mutex> lock(
-//         free_mutex_);
-
-//       buffer.in_use =
-//         false;
-
-//       free_queue_.push(
-//         buffer_index);
-
-//       continue;
-//     }
-
-//     const auto encode_done =
-//       std::chrono::steady_clock::now();
-
-//     // ------------------------------------------------------------------------
-//     // Filename.
-//     // ------------------------------------------------------------------------
-
-//     // const std::string filename =
-//     //   save_path_ +
-//     //   "argus_frame_" +
-//     //   camera_name_ +
-//     //   "_" +
-//     //   std::to_string(timestamp_ns) +
-//     //   ".jpg";
-
-
-//     // // 1. Get current local system time (minute resolution)
-//     // auto now = std::chrono::system_clock::now();
-//     // std::time_t time_t_now = std::chrono::system_clock::to_time_t(now);
-//     // std::tm tm_now = *std::localtime(&time_t_now);
-
-//     // std::ostringstream minute_folder_ss;
-//     // minute_folder_ss << std::put_time(&tm_now, "%Y-%m-%d_%H-%M");
-
-//     // // 2. Build full minute-wise folder path (e.g., "/tmp/camera_data/2026-10-07_16-55/")
-//     // std::filesystem::path folder_path = std::filesystem::path(save_path_) / minute_folder_ss.str();
-
-//     // // 3. Ensure directory exists before constructing filename
-//     // std::error_code ec;
-//     // std::filesystem::create_directories(folder_path, ec);
-
-//     // // 4. Build final filename path
-//     // const std::string filename =
-//     //   (folder_path / ("argus_frame_" +
-//     //                   camera_name_ +
-//     //                   "_" +
-//     //                   std::to_string(timestamp_ns) +
-//     //                   ".jpg")).string();
-
-//     // 100 seconds in nanoseconds (100 * 10^9)
-//     constexpr uint64_t NS_PER_10_SEC = 10000000000ULL;
-
-//     // Integer division isolates the 100-second bin (e.g., 4161... / 10^11 = 41)
-//     uint64_t folder_bin = timestamp_ns / NS_PER_10_SEC;
-
-//     std::string folder_name = std::to_string(folder_bin);
-
-//     // 1. Build directory path: /tmp/camera_data/41/
-//     std::filesystem::path folder_path = std::filesystem::path(save_path_) / folder_name;
-
-//     // 2. Ensure directory exists
-//     std::error_code ec;
-//     std::filesystem::create_directories(folder_path, ec);
-
-//     // 3. Build final file path: /tmp/camera_data/41/argus_frame_1_4161879387000.jpg
-//     const std::string filename =
-//       (folder_path / ("argus_frame_" +
-//                       camera_name_ +
-//                       "_" +
-//                       std::to_string(timestamp_ns) +
-//                       ".jpg")).string();
-
-//     // ------------------------------------------------------------------------
-//     // Write JPEG.
-//     // ------------------------------------------------------------------------
-
-//     const auto write_start =
-//       std::chrono::steady_clock::now();
-
-//     const bool write_success =
-//       writeJpegFile(
-//         filename,
-//         jpeg_data.data(),
-//         actual_jpeg_size);
-
-//     const auto write_done =
-//       std::chrono::steady_clock::now();
-
-//     // ------------------------------------------------------------------------
-//     // Return GPU buffer to pool using free_mutex_
-//     // ------------------------------------------------------------------------
-
-//     {
-//       std::lock_guard<std::mutex> lock(
-//         free_mutex_);
-
-//       buffer.in_use =
-//         false;
-
-//       buffer.timestamp_ns =
-//         0;
-
-//       buffer.frame_name.clear();
-
-//       free_queue_.push(
-//         buffer_index);
-//     }
-
-//     if (!write_success) {
-//       continue;
-//     }
-
-//     // ------------------------------------------------------------------------
-//     // Timing.
-//     // ------------------------------------------------------------------------
-
-//     const auto encode_ms =
-//       std::chrono::duration_cast<std::chrono::milliseconds>(
-//         encode_done - encode_start).count();
-
-//     const auto write_ms =
-//       std::chrono::duration_cast<std::chrono::milliseconds>(
-//         write_done - write_start).count();
-
-//     RCLCPP_INFO_THROTTLE(
-//       get_logger(),
-//       *get_clock(),
-//       10000,
-//       "JPEG camera=%d worker=%u %ux%u jpeg=%zu bytes "
-//       "encode=%ld ms write=%ld ms file=%s",
-//       camera_name_.c_str(),
-//       writer_id,
-//       width,
-//       height,
-//       actual_jpeg_size,
-//       encode_ms,
-//       write_ms,
-//       filename.c_str());
-
-//     // ------------------------------------------------------------------------
-//     // Frame log.
-//     // ------------------------------------------------------------------------
-
-//     writeFrameLog(
-//       timestamp_ns,
-//       camera_name_);
-//   }
-
-//   // --------------------------------------------------------------------------
-//   // Cleanup worker resources upon loop exit
-//   // --------------------------------------------------------------------------
-
-//   nvjpegEncoderParamsDestroy(encoder_params);
-//   nvjpegEncoderStateDestroy(encoder_state);
-//   nvjpegDestroy(nvjpeg_handle);
-//   cudaStreamDestroy(cuda_stream);
-// }
-
-// // ============================================================================
-// // Single Batch Binary Container Header
-// // ============================================================================
-// struct BatchHeader {
-//   uint32_t magic = 0x4A504742; // "JPGB"
-//   uint32_t num_frames = 0;
-//   uint32_t frame_sizes[4];
-//   uint64_t timestamps[4];
-// };
-
-// // ============================================================================
-// // JPEG worker (Processes batches of 4 frames into a single file)
-// // ============================================================================
-// void ArgusThreadNode::writerLoop(uint32_t writer_id)
-// {
-//   RCLCPP_INFO(get_logger(), "nvJPEG worker %u starting for camera_name=%s", writer_id, camera_name_.c_str());
-
-//   constexpr size_t BATCH_SIZE = 4;
-
-//   cudaStream_t cuda_stream = nullptr;
-//   cudaStreamCreateWithFlags(&cuda_stream, cudaStreamNonBlocking);
-
-//   nvjpegHandle_t nvjpeg_handle = nullptr;
-//   nvjpegCreateSimple(&nvjpeg_handle);
-
-//   nvjpegEncoderState_t encoder_state = nullptr;
-//   nvjpegEncoderParams_t encoder_params = nullptr;
-
-//   nvjpegEncoderStateCreate(nvjpeg_handle, &encoder_state, cuda_stream);
-//   nvjpegEncoderParamsCreate(nvjpeg_handle, &encoder_params, cuda_stream);
-//   nvjpegEncoderParamsSetQuality(encoder_params, 99, cuda_stream);
-//   nvjpegEncoderParamsSetSamplingFactors(encoder_params, NVJPEG_CSS_420, cuda_stream);
-
-//   while (true) {
-//     std::vector<size_t> batch_indices;
-//     batch_indices.reserve(BATCH_SIZE);
-
-//     // 1. Wait for AT LEAST 4 frames (or flush remaining on shutdown)
-//     {
-//       std::unique_lock<std::mutex> lock(write_mutex_);
-
-//       write_cv_.wait(
-//         lock,
-//         [this, BATCH_SIZE]() {
-//           return write_queue_.size() >= BATCH_SIZE || !running_.load();
-//         });
-
-//       if (!running_.load() && write_queue_.empty()) {
-//         break;
-//       }
-
-//       while (!write_queue_.empty() && batch_indices.size() < BATCH_SIZE) {
-//         batch_indices.push_back(write_queue_.front());
-//         write_queue_.pop();
-//       }
-//     }
-
-//     if (batch_indices.empty()) {
-//       continue;
-//     }
-
-//     const size_t current_batch_size = batch_indices.size();
-//     BatchHeader header;
-//     header.num_frames = static_cast<uint32_t>(current_batch_size);
-
-//     std::vector<std::vector<unsigned char>> encoded_jpegs(current_batch_size);
-
-//     // 2. Sequential CUDA-stream queued batch encoding
-//     for (size_t i = 0; i < current_batch_size; ++i) {
-//       size_t buffer_index = batch_indices[i];
-//       FrameBuffer & buffer = buffers_[buffer_index];
-
-//       header.timestamps[i] = buffer.timestamp_ns;
-
-//       nvjpegImage_t image{};
-//       image.channel[0] = reinterpret_cast<unsigned char *>(buffer.gpu_data);
-//       image.pitch[0] = buffer.stride;
-
-//       nvjpegStatus_t status = nvjpegEncodeImage(
-//         nvjpeg_handle,
-//         encoder_state,
-//         encoder_params,
-//         &image,
-//         NVJPEG_INPUT_RGBI,
-//         static_cast<int>(buffer.width),
-//         static_cast<int>(buffer.height),
-//         cuda_stream);
-
-//       if (status == NVJPEG_STATUS_SUCCESS) {
-//         size_t jpeg_size = 0;
-//         nvjpegEncodeRetrieveBitstream(nvjpeg_handle, encoder_state, nullptr, &jpeg_size, cuda_stream);
-
-//         encoded_jpegs[i].resize(jpeg_size);
-//         size_t actual_size = jpeg_size;
-
-//         nvjpegEncodeRetrieveBitstream(nvjpeg_handle, encoder_state, encoded_jpegs[i].data(), &actual_size, cuda_stream);
-//         header.frame_sizes[i] = static_cast<uint32_t>(actual_size);
-//       }
-//     }
-
-//     // Synchronize stream so CPU bitstream buffer data is ready
-//     cudaStreamSynchronize(cuda_stream);
-
-//     // 3. Return GPU buffers to free_queue IMMEDIATELY (Prevents callback pool exhaustion)
-//     {
-//       std::lock_guard<std::mutex> lock(free_mutex_);
-//       for (size_t buffer_index : batch_indices) {
-//         buffers_[buffer_index].in_use = false;
-//         buffers_[buffer_index].timestamp_ns = 0;
-//         buffers_[buffer_index].frame_name.clear();
-//         free_queue_.push(buffer_index);
-//       }
-//     }
-
-//     // 4. Single continuous write operation to NVMe (Fixes NVMe overheating)
-//     constexpr uint64_t NS_PER_100_SEC = 100000000000ULL;
-//     uint64_t folder_bin = header.timestamps[0] / NS_PER_100_SEC;
-//     std::filesystem::path folder_path = std::filesystem::path(save_path_) / std::to_string(folder_bin);
-
-//     std::error_code ec;
-//     std::filesystem::create_directories(folder_path, ec);
-
-//     std::string batch_filename = (folder_path / ("batch_cam_" + camera_name_ + "_" +
-//                                   std::to_string(header.timestamps[0]) + ".bin")).string();
-
-//     FILE * outfile = fopen(batch_filename.c_str(), "wb");
-//     if (outfile != nullptr) {
-//       fwrite(&header, sizeof(BatchHeader), 1, outfile);
-
-//       for (size_t i = 0; i < header.num_frames; ++i) {
-//         if (!encoded_jpegs[i].empty()) {
-//           fwrite(encoded_jpegs[i].data(), 1, header.frame_sizes[i], outfile);
-//         }
-//       }
-//       fclose(outfile);
-
-//       for (size_t i = 0; i < header.num_frames; ++i) {
-//         writeFrameLog(header.timestamps[i], camera_name_);
-//       }
-//     }
-//   }
-
-//   // Cleanup
-//   nvjpegEncoderParamsDestroy(encoder_params);
-//   nvjpegEncoderStateDestroy(encoder_state);
-//   nvjpegDestroy(nvjpeg_handle);
-//   cudaStreamDestroy(cuda_stream);
-// }
-
-
 // ============================================================================
 // Destructor
 // ============================================================================
 
 ArgusThreadNode::~ArgusThreadNode()
 {
-  // 1. Signal workers to stop and unblock waiting threads
+
   running_.store(false);
   write_cv_.notify_all();
 
-  // 2. Join all worker threads
   for (auto & thread : writer_threads_) {
     if (thread.joinable()) {
       thread.join();
     }
   }
 
-  // 3. Destroy CUDA stream
   if (copy_stream_ != nullptr) {
     cudaStreamDestroy(copy_stream_);
     copy_stream_ = nullptr;
   }
 
-  // 4. Free GPU buffer pool allocations
   destroyBuffers();
 }
 
