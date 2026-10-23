@@ -55,6 +55,8 @@
   <depend>gxf_isaac_tensorops</depend>
   <depend>gxf_isaac_timestamp_correlator</depend>
 
+  <depend>argus_recorder_msgs</depend>
+
   <build_depend>isaac_ros_common</build_depend>
 
   <test_depend>ament_lint_auto</test_depend>

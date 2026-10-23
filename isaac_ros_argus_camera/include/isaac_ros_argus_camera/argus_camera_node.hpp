@@ -18,6 +18,8 @@
 #ifndef ISAAC_ROS_ARGUS_CAMERA__ARGUS_CAMERA_NODE_HPP_
 #define ISAAC_ROS_ARGUS_CAMERA__ARGUS_CAMERA_NODE_HPP_
 
+#include <cstdint>
+#include <fstream>
 #include <memory>
 #include <set>
 #include <string>
@@ -62,15 +64,19 @@ public:
 
   // Callback to publish camera extrinsics to ROS TF tree
   void ArgusCameraInfoCallback(
-    const gxf_context_t context, nitros::NitrosTypeBase & msg,
-    const std::string parent_frame, const std::string child_frame,
+    const gxf_context_t context,
+    nitros::NitrosTypeBase & msg,
+    const std::string parent_frame,
+    const std::string child_frame,
     const sensor_msgs::msg::CameraInfo::SharedPtr camera_info);
 
   // Callback to publish camera extrinsics to ROS TF tree for stereo cameras
   // which may or may not include an IMU
   void ArgusStereoCameraInfoCallback(
-    const gxf_context_t context, nitros::NitrosTypeBase & msg,
-    const std::string rig_frame, const std::string camera_frame,
+    const gxf_context_t context,
+    nitros::NitrosTypeBase & msg,
+    const std::string rig_frame,
+    const std::string camera_frame,
     const sensor_msgs::msg::CameraInfo::SharedPtr left_camera_info,
     const sensor_msgs::msg::CameraInfo::SharedPtr right_camera_info,
     const StereoCameraSide side
@@ -78,12 +84,14 @@ public:
 
   // Callback to set frame_id
   void ArgusImageCallback(
-    const gxf_context_t context, nitros::NitrosTypeBase & msg,
+    const gxf_context_t context,
+    nitros::NitrosTypeBase & msg,
     const std::string frame_name);
 
   // Callback to set frame_id in the case of a stereo camera
   void ArgusStereoImageCallback(
-    const gxf_context_t context, nitros::NitrosTypeBase & msg,
+    const gxf_context_t context,
+    nitros::NitrosTypeBase & msg,
     const std::string frame_name);
 
 protected:
@@ -94,10 +102,15 @@ protected:
   int fsync_type_;
   bool use_hw_timestamp_;
   bool publish_tf_;
+
+  std::string camera_name_;
   std::string camera_link_frame_name_;
+
   // Publisher for tf2.
-  std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tf_broadcaster_{nullptr};
-  // set of child frames that have been published
+  std::unique_ptr<tf2_ros::StaticTransformBroadcaster>
+    tf_broadcaster_{nullptr};
+
+  // Set of child frames that have been published
   std::set<std::string> tf_was_published_;
 
   // Transform that converts from camera body frame to camera optical frame
@@ -106,7 +119,11 @@ protected:
   // x             ->  z
   // y             ->  -x
   // z             ->  -y
-  tf2::Transform cam_link_pose_optical_{tf2::Matrix3x3{0, 0, 1, -1, 0, 0, 0, -1, 0},
+  tf2::Transform cam_link_pose_optical_{
+    tf2::Matrix3x3{
+      0, 0, 1,
+      -1, 0, 0,
+      0, -1, 0},
     tf2::Vector3{0, 0, 0}};
 
   tf2::Transform right_camera_pose_rig_override_;
@@ -132,6 +149,31 @@ protected:
   tf2::Transform computeLeftOpticalPoseRightOptical(
     const sensor_msgs::msg::CameraInfo::SharedPtr left_camera_info,
     const sensor_msgs::msg::CameraInfo::SharedPtr right_camera_info);
+
+  // --------------------------------------------------------------------------
+  // Frame logging
+  // --------------------------------------------------------------------------
+
+  void initializeFrameLog();
+
+  // Writes one frame entry.
+  void writeFrameLog(
+    uint64_t timestamp_ns,
+    const std::string & frame_name);
+
+  // Flushes and closes the log file.
+  void closeFrameLog();
+
+  // CSV file containing captured frame information.
+  std::ofstream frame_log_;
+
+  // Sequential frame counter for this camera node.
+  uint64_t frame_sequence_{0};
+
+  // Number of frames since the last disk flush.
+  uint64_t frame_log_counter_{0};
+
+  std::string save_path_ = "/tmp/";
 };
 
 }  // namespace argus

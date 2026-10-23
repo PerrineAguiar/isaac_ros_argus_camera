@@ -27,6 +27,8 @@ message( STATUS "Architecture: ${ARCHITECTURE}" )
 
 find_package(ament_cmake_auto REQUIRED)
 find_package(Eigen3 REQUIRED NO_MODULE)
+find_package(CUDAToolkit REQUIRED)
+find_package(OpenCV REQUIRED)
 ament_auto_find_build_dependencies()
 
 ament_auto_add_library(argus_nitros_context SHARED src/argus_nitros_context.cpp)
@@ -49,6 +51,59 @@ set_target_properties(mono_node PROPERTIES
   INSTALL_RPATH_USE_LINK_PATH TRUE
 )
 
+ament_auto_add_library(custom_node SHARED src/argus_camera_custom_node.cpp)
+target_link_libraries(custom_node Eigen3::Eigen)
+rclcpp_components_register_nodes(custom_node "nvidia::isaac_ros::argus::ArgusCustomNode")
+set(node_plugins "${node_plugins}nvidia::isaac_ros::argus::ArgusCustomNode;$<TARGET_FILE:custom_node>\n")
+set_target_properties(custom_node PROPERTIES
+  BUILD_WITH_INSTALL_RPATH TRUE
+  BUILD_RPATH_USE_ORIGIN TRUE
+  INSTALL_RPATH_USE_LINK_PATH TRUE
+)
+
+
+# ament_auto_add_library(thread_node SHARED src/argus_camera_thread_node.cpp)
+# target_link_libraries(thread_node Eigen3::Eigen)
+# rclcpp_components_register_nodes(thread_node "nvidia::isaac_ros::argus::ArgusThreadNode")
+# set(node_plugins "${node_plugins}nvidia::isaac_ros::argus::ArgusThreadNode;$<TARGET_FILE:thread_node>\n")
+# set_target_properties(thread_node PROPERTIES
+#   BUILD_WITH_INSTALL_RPATH TRUE
+#   BUILD_RPATH_USE_ORIGIN TRUE
+#   INSTALL_RPATH_USE_LINK_PATH TRUE
+# )
+
+ament_auto_add_library(thread_node SHARED
+  src/argus_camera_thread_node.cpp
+)
+target_include_directories(thread_node
+  PRIVATE
+    /usr/local/cuda-12.6/targets/aarch64-linux/include
+)
+target_link_libraries(thread_node
+  Eigen3::Eigen
+  /usr/local/cuda-12.6/targets/aarch64-linux/lib/libnvjpeg.so
+)
+rclcpp_components_register_nodes(
+  thread_node
+  "nvidia::isaac_ros::argus::ArgusThreadNode"
+)
+set(node_plugins
+  "${node_plugins}nvidia::isaac_ros::argus::ArgusThreadNode;$<TARGET_FILE:thread_node>\n"
+)
+set_target_properties(thread_node PROPERTIES
+  BUILD_WITH_INSTALL_RPATH TRUE
+  BUILD_RPATH_USE_ORIGIN TRUE
+  INSTALL_RPATH_USE_LINK_PATH TRUE
+)
+
+
+target_link_libraries(custom_node
+  Eigen3::Eigen
+  jpeg
+)
+
+
+
 ament_auto_add_library(stereo_node SHARED src/argus_camera_stereo_node.cpp)
 target_link_libraries(stereo_node Eigen3::Eigen)
 rclcpp_components_register_nodes(stereo_node "nvidia::isaac_ros::argus::ArgusStereoNode")
@@ -58,6 +113,15 @@ set_target_properties(stereo_node PROPERTIES
   BUILD_RPATH_USE_ORIGIN TRUE
   INSTALL_RPATH_USE_LINK_PATH TRUE
 )
+
+target_include_directories(custom_node PRIVATE
+  ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(custom_node
+  ${OpenCV_LIBS}
+)
+
+
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
